@@ -2,6 +2,8 @@ import re,os,time
 import requests
 import threading
 from urllib import parse
+from Crypto.Cipher import AES
+import base64
 
 sem=threading.Semaphore(35)
 
@@ -10,6 +12,8 @@ class SpiderByChok8:
         self.fileDir = fileDir
         self.totalCount = totalCount
         self.url = url
+        self.key = ""
+        self.iv = ""
         pass
 
 
@@ -19,11 +23,23 @@ class SpiderByChok8:
 
     def __get_real_ts__(self,text,front_url):
         # print(text)
+        url = front_url
+        temp_lines = text.split("\n")
+        for line in temp_lines:
+            if ".m3u8" in line:
+                url = front_url + line
         links = ""
-        lines = text.split("\n")
+        html = requests.get(url)
+        lines = html.text.split("\n")
         for line in lines:
-            if("ts" in line):
-                link = front_url+line+"\n"
+            if ".key" in line :
+                aes_url = re.findall(r'#EXT-X-KEY:METHOD=AES-128,URI="(.*)"', line)[0]
+                keys = requests.get(aes_url).text
+                self.key = base64.b64decode(keys)
+                iv = '00000000000000000000000000000000'
+                self.iv = bytes.fromhex(iv)
+            if ".ts" in line:
+                link = line+"\n"
                 links += link
 
         return links
@@ -45,10 +61,11 @@ class SpiderByChok8:
                 res.encoding = 'utf-8'
                 html = res.text
                 reg = re.compile(
-                    r'<script type="text/javascript">var player_data={.*?,"url":"(.*?)",.*?,"from":"wlm3u8","server":"","note":""}</script>',re.S)
+                    r'var player_aaaa={"flag":"play",.*?,"url":"(.*?)",.*?,"from":"dbm3u8","server":"no","note":""',
+                    re.S)
                 url = re.findall(reg, html)
-                url = parse.unquote(url[0])
-                front_url = url[:23]
+                url = parse.unquote(url[0]).replace("\\","")
+                front_url = url[:24]
                 html = requests.get(url)
                 links = self.__get_real_ts__(html.text,front_url)
                 with open('{}/{}.txt'.format(filedir,count), 'w') as f:
@@ -90,16 +107,32 @@ class SpiderByChok8:
                 print()
 
     def __down__(self,link,path):
-        # print(link)
+        print(link)
         # link = "https://cn1.5311444.com/hls/20190416/109de379e54813048a58e01ca98d109e/1555403650/film_00000.ts"
-        try:
-            name = link[link.find("film"):]
-            f = requests.get(link)
-            with open(path+name,"wb") as code:
-                code.write(f.content)
-        except:
-            print("*********%s-----*********"%len(link.replace(" ","")))
-        print(path+name)
+        # try:
+        #     # name = link[link.find("film"):]
+        #     # re.findall(r'#EXT-X-KEY:METHOD=AES-128,URI="(.*)"', line)[0]
+        #     name = re.findall(r'.*?/hls/(.*)',link)[0]
+        #     f = requests.get(link)
+        #     with open(path+name,"wb") as code:
+        #         code.write(f.content)
+        #     with open(path + name,"rb") as code:
+        #         cryptor = AES.new(self.key, AES.MODE_CBC, self.iv)  # 创建实例
+        #         plain_data = cryptor.decrypt(f.read())  # 放入需要解密的东西
+        #         with open(path+name+"_", 'wb') as w:
+        #             w.write(plain_data)
+        # except:
+        #     print("*********%s-----*********"%len(link.replace(" ","")))
+        # print(path+name)
+        name = re.findall(r'.*?/hls/(.*)', link)[0]
+        f = requests.get(link)
+        with open(path + name, "wb") as code:
+            code.write(f.content)
+        with open(path + name, "rb") as code:
+            cryptor = AES.new(self.key, AES.MODE_CBC, self.iv)  # 创建实例
+            plain_data = cryptor.decrypt(f.read())  # 放入需要解密的东西
+            with open(path + name + "_", 'wb') as w:
+                w.write(plain_data)
 
 
     def combineTSFile(self):
@@ -119,14 +152,9 @@ class SpiderByChok8:
 
 
 if __name__ == '__main__':
-    fileDir = "/Users/canoejun/Desktop/大学/haizeiwang"
-    fileDir = "/Users/canoejun/Desktop/大学/guiguzi"
-
-    totalCount = 915
-    totalCount = 52
-
-    url = "https://www.chok8.com/vodplay/315-1"
-    url = "https://www.chok8.com/vodplay/28651-1"
+    fileDir = "/Users/canoejun/Downloads/videos/西部世界1"
+    totalCount = 1
+    url = "http://www.chok8.com/vodplay/87209-1"
     spider = SpiderByChok8(fileDir,totalCount,url)
     spider.download_ts_file()
     spider.combineTSFile()
